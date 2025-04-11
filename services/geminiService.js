@@ -4,10 +4,10 @@ import { GEMINI_API_KEY } from "../config/apiKeys.js";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const cleanJsonResponse = (response) => {
-    // Removes ```json or ``` from the beginning and end
     return response.replace(/```json|```/g, "").trim();
 };
 
+// 1. Parse Startup Idea
 export const parseWithGemini = async (idea) => {
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
@@ -43,6 +43,52 @@ Idea: "${idea}"
     }
 };
 
+// 2. Analyze Competitors
+export const analyzeWithGemini = async (idea, competitors, features = []) => {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+    const formattedData = competitors.map((comp, index) => {
+        return `${index + 1}. ${comp.title}\nSnippet: ${comp.snippet}\nLink: ${comp.link}\nSource: ${comp.source}`;
+    }).join("\n\n");
+
+    const prompt = `
+You're an expert SaaS market analyst. Given the following startup idea and a list of competitor data scraped from the web, analyze the competitors and return a cleaned summary.
+
+Startup Idea:
+"${idea}"
+
+Target Features: ${features.length ? features.join(', ') : "Not specified"}
+
+Competitor Data:
+${formattedData}
+
+Return a JSON array with the most relevant competitors and the following format:
+
+[
+  {
+    "name": "Competitor Name",
+    "summary": "1-2 sentence overview of what it does",
+    "link": "https://...",
+    "highlightedFeatures": ["feature1", "feature2"]
+  }
+]
+
+Respond ONLY with the raw JSON array.
+`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+
+    try {
+        const cleaned = cleanJsonResponse(response);
+        return JSON.parse(cleaned);
+    } catch (err) {
+        console.error("Failed to parse Gemini competitor response:", response);
+        return [];
+    }
+};
+
+// 3. Estimate Time & Cost
 export const estimateWithGemini = async (idea, teamSize, hourlyRate) => {
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
@@ -81,6 +127,53 @@ Respond in JSON format with:
             estimatedTime: null,
             estimatedCost: null,
             assumptions: [],
+        };
+    }
+};
+
+// 4. Market Feasibility
+export const estimateFeasibilityWithGemini = async (idea, competitors = [], features = []) => {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+    const formattedData = competitors.map((comp, index) => {
+        return `${index + 1}. ${comp.title}\nSnippet: ${comp.snippet}\nLink: ${comp.link}\nSource: ${comp.source}`;
+    }).join("\n\n");
+
+    const prompt = `
+You're a seasoned SaaS strategist and VC advisor. Assess the following idea's feasibility and market potential.
+
+Startup Idea:
+"${idea}"
+
+Key Features: ${features.length ? features.join(', ') : "Not specified"}
+
+Competitor Landscape:
+${formattedData || "No relevant competitors found."}
+
+Return a JSON object like:
+{
+  "feasibilityScore": 0-100,
+  "marketDemand": "High" | "Moderate" | "Low",
+  "successPotential": "High" | "Moderate" | "Low",
+  "summary": "Brief analysis about technical feasibility, demand, timing, and competition."
+}
+
+Respond only in raw JSON.
+`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+
+    try {
+        const cleaned = cleanJsonResponse(response);
+        return JSON.parse(cleaned);
+    } catch (err) {
+        console.error("Failed to parse Gemini feasibility response:", response);
+        return {
+            feasibilityScore: null,
+            marketDemand: null,
+            successPotential: null,
+            summary: "Could not evaluate feasibility due to a parsing error."
         };
     }
 };

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { SERPAPI_KEY } from "../config/apiKeys.js";
-import { analyzeWithGemini } from "../utils/gemini.js"; // You'll implement this
+import { analyzeWithGemini } from "./geminiService.js";
 
 const SEARCH_SITES = [
     'site:producthunt.com',
@@ -24,16 +24,16 @@ export const getCompetitorData = async (query, ideaFeatures = []) => {
             try {
                 const { data } = await axios.get(url);
 
-                if (data.organic_results?.length) {
-                    data.organic_results.forEach(result => {
+                if (Array.isArray(data.organic_results)) {
+                    for (const result of data.organic_results) {
                         const title = result.title || '';
                         const snippet = result.snippet || '';
-                        const link = result.link;
+                        const link = result.link || '';
 
-                        if (REJECT_PATTERNS.some(p => link.includes(p))) return;
+                        if (!link || REJECT_PATTERNS.some(p => link.includes(p))) continue;
 
                         const tags = detectTags(`${title} ${snippet}`);
-                        const matchScore = calculateMatchScore(tags, ideaFeatures);
+                        const matchScore = ideaFeatures.length ? calculateMatchScore(tags, ideaFeatures) : 0;
 
                         allResults.push({
                             title,
@@ -43,7 +43,7 @@ export const getCompetitorData = async (query, ideaFeatures = []) => {
                             matchScore,
                             source: site.replace('site:', '')
                         });
-                    });
+                    }
                 }
             } catch (error) {
                 console.error(`Error querying ${site}:`, error.message);
@@ -54,17 +54,20 @@ export const getCompetitorData = async (query, ideaFeatures = []) => {
         }
     }
 
-    const uniqueResults = Object.values(allResults.reduce((acc, result) => {
-        const key = result.link.toLowerCase();
-        if (!acc[key]) acc[key] = result;
-        return acc;
-    }, {}));
+    // Deduplicate by link
+    const uniqueResults = Object.values(
+        allResults.reduce((acc, result) => {
+            const key = result.link.toLowerCase();
+            if (!acc[key]) acc[key] = result;
+            return acc;
+        }, {})
+    );
 
     uniqueResults.sort((a, b) => b.matchScore - a.matchScore);
 
     console.log(`Found ${uniqueResults.length} filtered, high-relevance competitor results`);
 
-    // Now send to Gemini for analysis
+    // Prepare data for Gemini analysis
     const geminiInput = uniqueResults.map(r => ({
         title: r.title,
         snippet: r.snippet,
@@ -77,12 +80,18 @@ export const getCompetitorData = async (query, ideaFeatures = []) => {
 };
 
 const detectTags = (text) => {
-    const tagSet = ['AI', 'content generation', 'analytics', 'automation', 'social media', 'branding', 'marketing', 'copywriting', 'tool', 'SaaS', 'platform'];
+    const tagSet = [
+        'AI', 'content generation', 'analytics', 'automation',
+        'social media', 'branding', 'marketing', 'copywriting',
+        'tool', 'SaaS', 'platform'
+    ];
     return tagSet.filter(tag => text.toLowerCase().includes(tag.toLowerCase()));
 };
 
 const calculateMatchScore = (tags, features) => {
     if (!features.length) return 0;
-    const matches = tags.filter(tag => features.map(f => f.toLowerCase()).includes(tag.toLowerCase()));
+    const matches = tags.filter(tag =>
+        features.some(f => f.toLowerCase() === tag.toLowerCase())
+    );
     return Math.round((matches.length / features.length) * 100);
 };
