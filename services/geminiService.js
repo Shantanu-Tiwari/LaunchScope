@@ -177,3 +177,50 @@ Respond only in raw JSON.
         };
     }
 };
+
+// 5. Conversational Follow-up
+export const chatWithGemini = async (context, message) => {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+    const {
+        idea,
+        parsedIdea,
+        competitors,
+        estimation,
+        chatHistory = []
+    } = context;
+
+    const competitorSummary = competitors.map((comp, i) =>
+        `${i + 1}. ${comp.name}\nSummary: ${comp.summary}\nLink: ${comp.link}\nHighlighted Features: ${comp.highlightedFeatures?.join(", ")}`
+    ).join("\n\n");
+
+    const previousMessages = chatHistory
+        .map(entry => `${entry.role === "user" ? "User" : "Gemini"}: ${entry.content}`)
+        .join("\n");
+
+    const prompt = `
+You're a SaaS startup assistant helping analyze and refine an idea.
+
+Here is the context:
+Idea: "${idea}"
+Parsed Idea: ${JSON.stringify(parsedIdea, null, 2)}
+Estimation: ${JSON.stringify(estimation, null, 2)}
+Competitors:
+${competitorSummary || "No competitors found"}
+
+Previous conversation:
+${previousMessages || "None yet."}
+
+Current user message: "${message}"
+
+Respond informatively as Gemini.
+`;
+
+    try {
+        const result = await model.generateContent(prompt);
+        return result.response.text().trim();
+    } catch (error) {
+        console.error("Gemini conversation failed:", error.message);
+        return "Sorry, I couldn't process your request. Please try again.";
+    }
+};

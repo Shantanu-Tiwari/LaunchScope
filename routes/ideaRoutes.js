@@ -1,5 +1,5 @@
 import express from 'express';
-import {analyzeIdea} from "../controllers/ideaController.js";
+import { analyzeIdea } from "../controllers/ideaController.js";
 
 const router = express.Router();
 
